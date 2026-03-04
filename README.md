@@ -26,9 +26,10 @@ The sketch now tries these public/free APIs in sequence until one succeeds:
 
 The currently used API source is shown on the display.
 
+Time is synced via NTP using CET (`UTC+1`) for Europe/Berlin.
+
 ## Required libraries
 Install ESP32 core and these libraries through Arduino Library Manager:
-- NTPClient
 - Adafruit SSD1306 (only if `HAS_OLED` is `true`)
 - Adafruit GFX (only if `HAS_OLED` is `true`)
 - TFT_eSPI (only if `HAS_OLED` is `false`)

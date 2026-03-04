@@ -16,8 +16,7 @@
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
-#include <WiFiUdp.h>
-#include <NTPClient.h>  // https://github.com/arduino-libraries/NTPClient
+#include <time.h>
 
 #if HAS_OLED
 # include <Wire.h>
@@ -27,9 +26,6 @@
 # include <TFT_eSPI.h>
 # include <SPI.h>
 #endif
-
-WiFiUDP ntpUDP;
-NTPClient timeClient(ntpUDP);
 
 #if HAS_OLED
 Adafruit_SSD1306 disp(128, 64, &Wire, -1);
@@ -57,6 +53,19 @@ const ApiEndpoint APIS[] = {
 
 String lastSource = "none";
 int lastBTC = -1;
+
+
+static String getFormattedLocalTime()
+{
+    struct tm timeInfo;
+    if (!getLocalTime(&timeInfo, 2000)) {
+        return "--:--:--";
+    }
+
+    char buffer[9];
+    strftime(buffer, sizeof(buffer), "%H:%M:%S", &timeInfo);
+    return String(buffer);
+}
 
 static int parseCoinGecko(const String& json)
 {
@@ -192,9 +201,7 @@ void setup()
     }
     Serial.println(" OK");
 
-    timeClient.begin();
-    timeClient.setTimeOffset(3600 + 3600); // CEST
-    timeClient.update();
+    configTzTime("CET-1", "pool.ntp.org", "time.nist.gov");
 
     pinMode(0, INPUT_PULLUP);
     displayBTC();
@@ -202,8 +209,6 @@ void setup()
 
 void loop()
 {
-    timeClient.update();
-
     if (digitalRead(0) == LOW) {
         delay(50);
         if (digitalRead(0) == LOW) {
@@ -246,7 +251,7 @@ void displayBTC(void)
 
     disp.setTextSize(HAS_OLED ? 2 : 3);
     disp.setCursor(0, 0);
-    disp.print(timeClient.getFormattedTime());
+    disp.print(getFormattedLocalTime());
 
     disp.setTextSize(HAS_OLED ? 1 : 2);
     disp.setCursor(0, HAS_OLED ? 16 : 28);
@@ -255,12 +260,11 @@ void displayBTC(void)
 
     disp.setTextSize(HAS_OLED ? 2 : 3);
     disp.setCursor(0, HAS_OLED ? 26 : 50);
-    disp.print("BTC EUR:");
+    disp.print("BTC in €");
 
     disp.setTextSize(HAS_OLED ? 3 : 5);
     disp.setCursor(0, HAS_OLED ? 42 : 78);
     if (lastBTC > 0) {
-        disp.print("EUR ");
         disp.print(lastBTC);
     } else {
         disp.print("n/a");
