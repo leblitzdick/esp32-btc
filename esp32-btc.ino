@@ -1,21 +1,22 @@
 /********************************************
     ESP32 LCD TFT / OLED display demo
 
-    Prints current time and BTC price in USD
+    Prints current time and BTC price in EUR
 
-    written by Petr Stehlik in 2019/07/25
+    originally written by Petr Stehlik in 2019/07/25
+    updated for Arduino IDE 2.3.8 in 2026
 
     released under the GNU GPL
 
     https://github.com/joysfera/
 *********************************************/
 
-#define HAS_OLED false  // TTGO T-Display by default, change to true for OLED SSD1306
+#define HAS_OLED true  // TTGO T-Display by default, change to true for OLED SSD1306
 
+#include <WiFi.h>
 #include <WiFiClientSecure.h>
-#include <WiFiUdp.h>
-#include <NTPClient.h>  // https://github.com/arduino-libraries/NTPClient
-#include <Tasker.h>     // https://github.com/joysfera/arduino-tasker
+#include <HTTPClient.h>
+#include <time.h>
 
 #if HAS_OLED
 # include <Wire.h>
@@ -26,12 +27,6 @@
 # include <SPI.h>
 #endif
 
-WiFiClientSecure client;
-WiFiUDP ntpUDP;
-NTPClient timeClient(ntpUDP);
-
-Tasker tasker;
-
 #if HAS_OLED
 Adafruit_SSD1306 disp(128, 64, &Wire, -1);
 #else
@@ -39,9 +34,135 @@ Adafruit_SSD1306 disp(128, 64, &Wire, -1);
 TFT_eSPI disp = TFT_eSPI(135, 240);
 #endif
 
-const char* ssid     = "yourssid";     // your network SSID (name of wifi network)
-const char* password = "yourpassword"; // your network password
-const char* server = "api.coinbase.com";  // Server URL
+const char* ssid = "yourssid";          // your network SSID (name of wifi network)
+const char* password = "yourpassword";  // your network password
+
+const unsigned long REFRESH_MS = 100000UL;
+unsigned long nextRefreshAt = 0;
+
+struct ApiEndpoint {
+    const char* name;
+    const char* url;
+};
+
+const ApiEndpoint APIS[] = {
+    {"CoinGecko", "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=eur"},
+    {"Kraken", "https://api.kraken.com/0/public/Ticker?pair=XBTEUR"},
+    {"Bitstamp", "https://www.bitstamp.net/api/v2/ticker/btceur/"}
+};
+
+String lastSource = "none";
+int lastBTC = -1;
+
+
+static String getFormattedLocalTime()
+{
+    struct tm timeInfo;
+    if (!getLocalTime(&timeInfo, 2000)) {
+        return "--:--:--";
+    }
+
+    char buffer[9];
+    strftime(buffer, sizeof(buffer), "%H:%M:%S", &timeInfo);
+    return String(buffer);
+}
+
+static int parseCoinGecko(const String& json)
+{
+    int keyPos = json.indexOf("\"eur\":");
+    if (keyPos < 0) {
+        return -1;
+    }
+
+    int valueStart = keyPos + 6;
+    int valueEnd = valueStart;
+    while (valueEnd < (int)json.length() && (isDigit(json[valueEnd]) || json[valueEnd] == '.')) {
+        valueEnd++;
+    }
+
+    return json.substring(valueStart, valueEnd).toFloat();
+}
+
+static int parseKraken(const String& json)
+{
+    int keyPos = json.indexOf("\"c\":[\"");
+    if (keyPos < 0) {
+        return -1;
+    }
+
+    int valueStart = keyPos + 6;
+    int valueEnd = json.indexOf('"', valueStart);
+    if (valueEnd < 0) {
+        return -1;
+    }
+
+    return json.substring(valueStart, valueEnd).toFloat();
+}
+
+static int parseBitstamp(const String& json)
+{
+    int keyPos = json.indexOf("\"last\":\"");
+    if (keyPos < 0) {
+        return -1;
+    }
+
+    int valueStart = keyPos + 8;
+    int valueEnd = json.indexOf('"', valueStart);
+    if (valueEnd < 0) {
+        return -1;
+    }
+
+    return json.substring(valueStart, valueEnd).toFloat();
+}
+
+static int parseBTC(const String& apiName, const String& payload)
+{
+    if (apiName == "CoinGecko") {
+        return parseCoinGecko(payload);
+    }
+    if (apiName == "Kraken") {
+        return parseKraken(payload);
+    }
+    if (apiName == "Bitstamp") {
+        return parseBitstamp(payload);
+    }
+
+    return -1;
+}
+
+static int fetchBTCFromApi(const ApiEndpoint& api)
+{
+    WiFiClientSecure secureClient;
+    secureClient.setInsecure();  // keep setup simple across the APIs listed above
+
+    HTTPClient https;
+    if (!https.begin(secureClient, api.url)) {
+        Serial.printf("[%s] HTTPS begin failed\n", api.name);
+        return -1;
+    }
+
+    https.setConnectTimeout(8000);
+    https.setTimeout(8000);
+
+    int code = https.GET();
+    if (code <= 0 || code != HTTP_CODE_OK) {
+        Serial.printf("[%s] HTTP error: %d\n", api.name, code);
+        https.end();
+        return -1;
+    }
+
+    String payload = https.getString();
+    https.end();
+
+    int price = parseBTC(api.name, payload);
+    if (price <= 0) {
+        Serial.printf("[%s] Parse failed\n", api.name);
+        return -1;
+    }
+
+    Serial.printf("[%s] BTC = EUR %d\n", api.name, price);
+    return price;
+}
 
 void setup()
 {
@@ -70,34 +191,58 @@ void setup()
     disp.print("Connecting to WiFi");
     Serial.print("Attempting to connect to SSID: ");
     Serial.println(ssid);
+    WiFi.mode(WIFI_STA);
     WiFi.begin(ssid, password);
 
-    // attempt to connect to Wifi network:
     while (WiFi.status() != WL_CONNECTED) {
         disp.print('.');
         Serial.print('.');
-        // wait 1 second for re-trying
         delay(1000);
     }
     Serial.println(" OK");
 
-    timeClient.begin();
-    timeClient.setTimeOffset(3600 + 3600); // CEST
-    timeClient.update();
+    configTzTime("CET-1", "pool.ntp.org", "time.nist.gov");
 
+    pinMode(0, INPUT_PULLUP);
     displayBTC();
 }
 
 void loop()
 {
-    timeClient.update();                  // keep time up-to-date
-    tasker.loop();
-    if (digitalRead(0) == LOW)            // if button on GPIO0 is pressed then
-        tasker.setTimeout(displayBTC, 250); // update display almost instantly
+    if (digitalRead(0) == LOW) {
+        delay(50);
+        if (digitalRead(0) == LOW) {
+            displayBTC();
+            while (digitalRead(0) == LOW) {
+                delay(20);
+            }
+        }
+    }
+
+    if (millis() >= nextRefreshAt) {
+        displayBTC();
+    }
+
+    delay(50);
+}
+
+int getBTC(void)
+{
+    for (size_t i = 0; i < sizeof(APIS) / sizeof(APIS[0]); ++i) {
+        int price = fetchBTCFromApi(APIS[i]);
+        if (price > 0) {
+            lastSource = APIS[i].name;
+            return price;
+        }
+    }
+
+    return -1;
 }
 
 void displayBTC(void)
 {
+    lastBTC = getBTC();
+
 #if HAS_OLED
     disp.clearDisplay();
 #else
@@ -106,53 +251,28 @@ void displayBTC(void)
 
     disp.setTextSize(HAS_OLED ? 2 : 3);
     disp.setCursor(0, 0);
-    disp.print(timeClient.getFormattedTime());
-    disp.setCursor(0, HAS_OLED ? 20 : 30);
-    disp.print("BTC price:");
-    disp.setTextSize(HAS_OLED ? 3 : 6);
-    disp.setCursor(0, HAS_OLED ? 40 : 60);
-    disp.print('$');
-    disp.print(getBTC());
+    disp.print(getFormattedLocalTime());
+
+    disp.setTextSize(HAS_OLED ? 1 : 2);
+    disp.setCursor(0, HAS_OLED ? 16 : 28);
+    disp.print("API: ");
+    disp.print(lastSource);
+
+    disp.setTextSize(HAS_OLED ? 2 : 3);
+    disp.setCursor(0, HAS_OLED ? 26 : 50);
+    disp.print("BTC:");
+
+    disp.setTextSize(HAS_OLED ? 3 : 5);
+    disp.setCursor(0, HAS_OLED ? 42 : 78);
+    if (lastBTC > 0) {
+        disp.print(lastBTC);
+    } else {
+        disp.print("n/a");
+    }
 
 #if HAS_OLED
     disp.display();
 #endif
 
-    tasker.setTimeout(displayBTC, 100000);    // next round in 100 seconds
-}
-
-int getBTC(void)
-{
-    int btc = 0;
-    Serial.println("Starting connection to server...");
-    if (!client.connect(server, 443)) {
-        Serial.println("Connection failed!");
-        btc = -1;
-    }
-    else {
-        Serial.println("Connected to server!");
-        // Make a HTTP request:
-        client.println("GET https://api.coinbase.com/v2/prices/BTC-USD/spot HTTP/1.0");
-        client.println("Host: api.coinbase.com");
-        client.println("Connection: close");
-        client.println();
-
-        while (client.connected()) {
-            String line = client.readStringUntil('\n');
-            if (line == "\r") break; // end of HTTP headers
-        }
-        while (client.available()) {
-            String line = client.readStringUntil('\n');
-            int a = line.indexOf("amount");       // naive parsing of the JSON reply
-            if (a > 0) {
-                String amount = line.substring(a + 9);
-                btc = amount.toInt();
-                Serial.print("BTC = $");
-                Serial.println(btc);
-            }
-            break;
-        }
-        client.stop();
-    }
-    return btc;
+    nextRefreshAt = millis() + REFRESH_MS;
 }
