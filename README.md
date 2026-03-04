@@ -1,7 +1,7 @@
 # ESP32-BTC
 Simple Demo for an ESP32 module with a TFT LCD or an OLED display.
 
-Displays current time and BTC price in USD.
+Displays current time and BTC price in EUR.
 
 Supports two different modules directly:
 
@@ -10,17 +10,32 @@ Supports two different modules directly:
 
 It's very easy to modify the source code for any I2C or SPI connected display.
 
-The demo application shows several useful techniques, such as:
-- using a single source code with very different displays and graphics libraries
-- obtaining current time using SNTP
-- obtaining current bitcoin price using a web API
-- avoiding JSON library when decoding simple JSON message
-- using the Tasker library to call a task periodically or on a button press
+## Arduino IDE 2.3.8 compatibility
+This sketch was updated to work with the current ESP32 toolchain used by Arduino IDE **2.3.8**.
+
+Main changes:
+- replaced Tasker-based scheduling with a plain `millis()` loop
+- switched to `HTTPClient` + `WiFiClientSecure` for HTTPS requests
+- added robust API fallback list (no API key required)
+
+## Free BTC APIs integrated
+The sketch now tries these public/free APIs in sequence until one succeeds:
+1. CoinGecko: `https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=eur`
+2. Kraken: `https://api.kraken.com/0/public/Ticker?pair=XBTEUR`
+3. Bitstamp: `https://www.bitstamp.net/api/v2/ticker/btceur/`
+
+The currently used API source is shown on the display.
+
+Time is synced via NTP with timezone rules for `Europe/Berlin` (CET/CEST automatic DST switching).
+
+## Required libraries
+Install ESP32 core and these libraries through Arduino Library Manager:
+- Adafruit SSD1306 (only if `HAS_OLED` is `true`)
+- Adafruit GFX (only if `HAS_OLED` is `true`)
+- TFT_eSPI (only if `HAS_OLED` is `false`)
 
 To install ESP32 core on Arduino follow the instructions on this page:
 https://github.com/espressif/arduino-esp32#installation-instructions
-
-Then you'll need to install either SSD1306 or TFT_eSPI libraries and also NTPClient and Tasker libraries. They are available via the Arduino Library Manager.
 
 Please note that the TTGO T-Display requires version **1.4.16** (or higher) of the TFT_eSPI library, otherwise the screen content is shifted by 52 pixels.
 
