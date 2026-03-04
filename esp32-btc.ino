@@ -1,7 +1,7 @@
 /********************************************
     ESP32 LCD TFT / OLED display demo
 
-    Prints current time and BTC price in USD
+    Prints current time and BTC price in EUR
 
     originally written by Petr Stehlik in 2019/07/25
     updated for Arduino IDE 2.3.8 in 2026
@@ -11,7 +11,7 @@
     https://github.com/joysfera/
 *********************************************/
 
-#define HAS_OLED false  // TTGO T-Display by default, change to true for OLED SSD1306
+#define HAS_OLED true  // TTGO T-Display by default, change to true for OLED SSD1306
 
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
@@ -50,9 +50,9 @@ struct ApiEndpoint {
 };
 
 const ApiEndpoint APIS[] = {
-    {"CoinGecko", "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd"},
-    {"Kraken", "https://api.kraken.com/0/public/Ticker?pair=XBTUSD"},
-    {"Bitstamp", "https://www.bitstamp.net/api/v2/ticker/btcusd/"}
+    {"CoinGecko", "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=eur"},
+    {"Kraken", "https://api.kraken.com/0/public/Ticker?pair=XBTEUR"},
+    {"Bitstamp", "https://www.bitstamp.net/api/v2/ticker/btceur/"}
 };
 
 String lastSource = "none";
@@ -60,7 +60,7 @@ int lastBTC = -1;
 
 static int parseCoinGecko(const String& json)
 {
-    int keyPos = json.indexOf("\"usd\":");
+    int keyPos = json.indexOf("\"eur\":");
     if (keyPos < 0) {
         return -1;
     }
@@ -151,7 +151,7 @@ static int fetchBTCFromApi(const ApiEndpoint& api)
         return -1;
     }
 
-    Serial.printf("[%s] BTC = $%d\n", api.name, price);
+    Serial.printf("[%s] BTC = EUR %d\n", api.name, price);
     return price;
 }
 
@@ -255,12 +255,12 @@ void displayBTC(void)
 
     disp.setTextSize(HAS_OLED ? 2 : 3);
     disp.setCursor(0, HAS_OLED ? 26 : 50);
-    disp.print("BTC USD:");
+    disp.print("BTC EUR:");
 
     disp.setTextSize(HAS_OLED ? 3 : 5);
     disp.setCursor(0, HAS_OLED ? 42 : 78);
     if (lastBTC > 0) {
-        disp.print('$');
+        disp.print("EUR ");
         disp.print(lastBTC);
     } else {
         disp.print("n/a");

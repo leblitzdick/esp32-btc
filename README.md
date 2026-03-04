@@ -1,7 +1,7 @@
 # ESP32-BTC
 Simple Demo for an ESP32 module with a TFT LCD or an OLED display.
 
-Displays current time and BTC price in USD.
+Displays current time and BTC price in EUR.
 
 Supports two different modules directly:
 
@@ -20,9 +20,9 @@ Main changes:
 
 ## Free BTC APIs integrated
 The sketch now tries these public/free APIs in sequence until one succeeds:
-1. CoinGecko: `https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd`
-2. Kraken: `https://api.kraken.com/0/public/Ticker?pair=XBTUSD`
-3. Bitstamp: `https://www.bitstamp.net/api/v2/ticker/btcusd/`
+1. CoinGecko: `https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=eur`
+2. Kraken: `https://api.kraken.com/0/public/Ticker?pair=XBTEUR`
+3. Bitstamp: `https://www.bitstamp.net/api/v2/ticker/btceur/`
 
 The currently used API source is shown on the display.
 
