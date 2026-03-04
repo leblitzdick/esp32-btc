@@ -260,7 +260,7 @@ void displayBTC(void)
 
     disp.setTextSize(HAS_OLED ? 2 : 3);
     disp.setCursor(0, HAS_OLED ? 26 : 50);
-    disp.print("BTC in €");
+    disp.print("BTC in EUR");
 
     disp.setTextSize(HAS_OLED ? 3 : 5);
     disp.setCursor(0, HAS_OLED ? 42 : 78);
